@@ -28,6 +28,10 @@ Reference: Adapted from Taiwan Central Weather Administration rainfall warning c
 * Female driver (reference group)
 * Male driver
 
+#### Urbanization Categories 
+
+We utilized the official administrative classification of the Ministry of the Interior as a proxy for urbanization. Because Taiwanese law determines township suffixes based on structural development and population benchmarks, categorizing the data into Districts (High), Cities/Towns (Medium), and Townships (Low) provides a legally and structurally sound metric for urbanization. 
+
 ### Interaction Terms
 
 * Light Rain × Male
