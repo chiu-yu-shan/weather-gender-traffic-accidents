@@ -174,7 +174,7 @@ df_urban <- st_join(df_sf, twn_sf[, c("TOWNCODE", "urban_class")],
                     join = st_within) %>%
   st_drop_geometry()
 
-# ── 3. 長條圖：哪種地區車禍最多 ─────────────────────────
+#  ─────────────────────────
 df_urban %>%
   filter(!is.na(urban_class)) %>%
   count(urban_class) %>%
@@ -187,6 +187,29 @@ df_urban %>%
 
 
 
+# 1. Load shapefile and match coordinate system
+twn_sf <- st_read("鄉(鎮、市、區)界線1140318/TOWN_MOI_1140318.shp") %>% st_transform(crs = 4326)
+
+# 2. Convert traffic data to spatial object and join with map boundaries
+df_sf <- df %>%
+  filter(party_seq == 1, longitude > 119 & longitude < 123 & latitude > 21 & latitude < 26) %>%
+  st_as_sf(coords = c("longitude", "latitude"), crs = 4326)
+
+# 3. Process urbanization level and plot the gender proportion chart
+st_join(df_sf, twn_sf[, "TOWNNAME"], join = st_within) %>%
+  st_drop_geometry() %>%
+  mutate(
+    suffix = substr(TOWNNAME, nchar(TOWNNAME), nchar(TOWNNAME)),
+    urbanization = case_when(suffix == "區" ~ "High", suffix %in% c("市", "鎮") ~ "Medium", suffix == "鄉" ~ "Low", TRUE ~ NA_character_)
+  ) %>%
+  filter(!is.na(urbanization), gender %in% c("M", "F")) %>%
+  
+  ggplot(aes(x = factor(urbanization, levels = c("High", "Medium", "Low")), fill = gender)) +
+  geom_bar(position = "fill", width = 0.5) +
+  scale_y_continuous(labels = scales::percent) +
+  scale_fill_manual(values = c("M" = "#3498DB", "F" = "#E74C3C")) +
+  theme_minimal() +
+  labs(title = "Accident Gender Proportion by Urbanization", x = "Urbanization Level", y = "Percentage", fill = "Gender")
 
 
 
