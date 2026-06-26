@@ -211,11 +211,29 @@ st_join(df_sf, twn_sf[, "TOWNNAME"], join = st_within) %>%
   theme_minimal() +
   labs(title = "Accident Gender Proportion by Urbanization", x = "Urbanization Level", y = "Percentage", fill = "Gender")
 
+# 4. Regression model including urbanization
+# Model 2: Weather + Gender + Weather × Gender + Urbanization
 
+accident_counts_urban <- df_urban %>%
+  filter(
+    !is.na(urban_class),
+    gender %in% c("M", "F"),
+    !is.na(rain_category)
+  ) %>%
+  mutate(
+    gender = factor(gender, levels = c("F", "M")),
+    rain_category = factor(rain_category, levels = c("None", "Light", "Moderate", "Heavy")),
+    urban_class = factor(urban_class, levels = c("鄉村", "半都市", "都市"))
+  ) %>%
+  group_by(date, gender, rain_category, urban_class) %>%
+  summarise(n_accidents = n(), .groups = "drop")
 
+model_urban <- glm(
+  n_accidents ~ rain_category + gender + rain_category:gender + urban_class,
+  data = accident_counts_urban,
+  family = poisson
+)
 
-
-
-
+summary(model_urban)
 
 
