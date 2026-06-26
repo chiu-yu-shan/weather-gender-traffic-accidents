@@ -236,4 +236,31 @@ model_urban <- glm(
 
 summary(model_urban)
 
+# Coefficient plot for Model 2
 
+model_urban_results <- as.data.frame(summary(model_urban)$coefficients) %>%
+  mutate(Variable = rownames(.)) %>%
+  rename(
+    Std_Error = `Std. Error`,
+    P_Value = `Pr(>|z|)`
+  ) %>%
+  filter(Variable != "(Intercept)") %>%
+  mutate(
+    Lower_CI = Estimate - 1.96 * Std_Error,
+    Upper_CI = Estimate + 1.96 * Std_Error
+  )
+
+p_coef_urban <- ggplot(model_urban_results, aes(x = reorder(Variable, Estimate), y = Estimate)) +
+  geom_hline(yintercept = 0, linetype = "dashed", color = "red", linewidth = 0.8) +
+  geom_errorbar(aes(ymin = Lower_CI, ymax = Upper_CI), width = 0.2, color = "skyblue4", linewidth = 0.8) +
+  geom_point(color = "firebrick", size = 3) +
+  coord_flip() +
+  theme_minimal() +
+  labs(
+    title = "Coefficient Plot of Poisson Regression Model with Urbanization",
+    subtitle = "Points represent estimates; lines represent 95% confidence intervals",
+    x = "Variables / Interaction Terms",
+    y = "Poisson Regression Coefficient"
+  )
+
+ggsave("coefficient_plot_urbanization_model.png", plot = p_coef_urban, width = 8, height = 5, dpi = 300)
