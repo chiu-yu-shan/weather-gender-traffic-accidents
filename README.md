@@ -1,5 +1,9 @@
 # weather-gender-traffic-accidents
 Analysis of how weather conditions affect traffic accidents across genders in Taiwan.
+
+## Dataset
+The cleaned dataset can be accessed at the following link: https://drive.google.com/drive/folders/1eacm13gXMXoEhxK_IpQt18fY58wwOpAc?usp=drive_link 
+
 ## Research Background 
 Previous studies have shown that weather conditions and driver gender both influence traffic accidents. However, these factors are often examined separately, and many studies rely on aggregated city-level weather data, implicitly assuming that accidents occurring within the same city experience similar weather conditions.
 
