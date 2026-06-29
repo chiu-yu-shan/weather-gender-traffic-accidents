@@ -79,6 +79,16 @@ The weather dataset includes:
 * Time period: 2022–2024
 * Total observations: 600,000+ merged observations
 
+## Results
+
+### Accident Frequency Model
+
+![IRR](figures/coefficient_plot_urbanization_model_nb_IRR.png)
+
+### Fatality Risk Model
+
+![OR](figures/coefficient_plot_fatality_model_OR.png)
+
 ## Conclusion
 
 **Accident frequency.** Rainfall is associated with a sharp decline in accident counts relative to dry conditions: light rain corresponds to roughly 72% fewer accidents (IRR ≈ 0.28), and moderate and heavy rain both correspond to roughly 90% fewer accidents (IRR ≈ 0.10), all highly significant (p < 0.001). This pattern is large and consistent enough to warrant caution in interpretation — it may partly reflect reduced traffic volume or exposure during rainy conditions rather than a pure safety effect, since the model does not currently include an exposure offset. Male-involved accidents are associated with substantially higher counts than female-involved accidents (IRR ≈ 1.67, p < 0.001). The rain × gender interaction terms were not statistically significant in the negative binomial model (p = 0.46, 0.99, and 0.36 for light, moderate, and heavy rain respectively), indicating no robust evidence that the relationship between rainfall and accident frequency differs by gender.
