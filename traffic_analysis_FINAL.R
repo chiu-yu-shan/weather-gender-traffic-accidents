@@ -8,10 +8,16 @@ library(writexl)
 library(leaflet)
 library(ggrepel)
 library(sf)
+library(httr)
+library(MASS)
 
-setwd("C://Users//user//Documents//big data final")
+rm(list = ls())
 
-a1 <- read.csv("df_traffic_temp_rain.csv")
+
+setwd("___")
+
+#read cleaned data from: https://drive.google.com/drive/folders/1eacm13gXMXoEhxK_IpQt18fY58wwOpAc?usp=drive_link
+a1 <- read.csv("df_traffic_temp_rain.csv") 
 
 df <- a1 %>%
   mutate(
@@ -135,75 +141,32 @@ p_male_rate <- ggplot(data = grid_male_rate) +
 ggsave("map_male_at_fault_rate.png", plot = p_male_rate, width = 8, height = 10, dpi = 300)
 
 
-###
-
-library(sf)
-twn_sf <- st_read("鄉(鎮、市、區)界線1140318/TOWN_MOI_1140318.shp")
-names(twn_sf)
-
-
-
-typology <- read.csv("C:/Users/user/Downloads/academia_sinica_typology.csv") %>%
-  mutate(urban_class = case_when(
-    urban_level <= 2 ~ "都市",
-    urban_level <= 5 ~ "半都市",
-    TRUE             ~ "鄉村"
-  ))
-
-twn_sf <- st_read("鄉(鎮、市、區)界線1140318/TOWN_MOI_1140318.shp") %>%
-  st_transform(crs = 4326)
-
-typology <- read.csv("academia_sinica_typology.csv") %>%
-  mutate(urban_class = case_when(
-    urban_level <= 2 ~ "都市",
-    urban_level <= 5 ~ "半都市",
-    TRUE             ~ "鄉村"
-  ))
-
-twn_sf <- twn_sf %>%
-  left_join(typology, by = "TOWNCODE")
-
-# ── 2. 車禍點對應到鄉鎮 ─────────────────────────────────
-df_sf <- df %>%
-  filter(party_seq == 1,
-         longitude > 119, longitude < 123,
-         latitude > 21, latitude < 26) %>%
-  st_as_sf(coords = c("longitude", "latitude"), crs = 4326)
-
-df_urban <- st_join(df_sf, twn_sf[, c("TOWNCODE", "urban_class")],
-                    join = st_within) %>%
-  st_drop_geometry()
-
-#  ─────────────────────────
-df_urban %>%
-  filter(!is.na(urban_class)) %>%
-  count(urban_class) %>%
-  ggplot(aes(x = reorder(urban_class, -n), y = n, fill = urban_class)) +
-  geom_col(width = 0.5) +
-  geom_text(aes(label = scales::comma(n)), vjust = -0.5) +
-  scale_fill_manual(values = c("都市" = "#E74C3C", "半都市" = "#F39C12", "鄉村" = "#27AE60")) +
-  theme_minimal() +
-  labs(title = "各都市化程度車禍件數", x = "都市化程度", y = "車禍件數", fill = "")
-
-
+##
 
 # 1. Load shapefile and match coordinate system
-twn_sf <- st_read("鄉(鎮、市、區)界線1140318/TOWN_MOI_1140318.shp") %>% st_transform(crs = 4326)
+twn_sf <- st_read("shp_temp/TOWN_MOI_1140318.shp") %>%
+  st_transform(crs = 4326)
 
 # 2. Convert traffic data to spatial object and join with map boundaries
 df_sf <- df %>%
   filter(party_seq == 1, longitude > 119 & longitude < 123 & latitude > 21 & latitude < 26) %>%
   st_as_sf(coords = c("longitude", "latitude"), crs = 4326)
 
-# 3. Process urbanization level and plot the gender proportion chart
-st_join(df_sf, twn_sf[, "TOWNNAME"], join = st_within) %>%
+df_urban <- st_join(df_sf, twn_sf[, "TOWNNAME"], join = st_within) %>%
   st_drop_geometry() %>%
   mutate(
     suffix = substr(TOWNNAME, nchar(TOWNNAME), nchar(TOWNNAME)),
-    urbanization = case_when(suffix == "區" ~ "High", suffix %in% c("市", "鎮") ~ "Medium", suffix == "鄉" ~ "Low", TRUE ~ NA_character_)
-  ) %>%
+    urbanization = case_when(
+      suffix == "區" ~ "High",
+      suffix %in% c("市", "鎮") ~ "Medium",
+      suffix == "鄉" ~ "Low",
+      TRUE ~ NA_character_
+    )
+  )
+
+# 3. Gender proportion chart by urbanization level
+df_urban %>%
   filter(!is.na(urbanization), gender %in% c("M", "F")) %>%
-  
   ggplot(aes(x = factor(urbanization, levels = c("High", "Medium", "Low")), fill = gender)) +
   geom_bar(position = "fill", width = 0.5) +
   scale_y_continuous(labels = scales::percent) +
@@ -212,33 +175,31 @@ st_join(df_sf, twn_sf[, "TOWNNAME"], join = st_within) %>%
   labs(title = "Accident Gender Proportion by Urbanization", x = "Urbanization Level", y = "Percentage", fill = "Gender")
 
 # 4. Regression model including urbanization
-# Model 2: Weather + Gender + Weather × Gender + Urbanization
+# Model 2: Weather + Gender + Weather × Gender + Urbanization (Negative Binomial)
 
 accident_counts_urban <- df_urban %>%
   filter(
-    !is.na(urban_class),
+    !is.na(urbanization),
     gender %in% c("M", "F"),
     !is.na(rain_category)
   ) %>%
   mutate(
     gender = factor(gender, levels = c("F", "M")),
     rain_category = factor(rain_category, levels = c("None", "Light", "Moderate", "Heavy")),
-    urban_class = factor(urban_class, levels = c("鄉村", "半都市", "都市"))
+    urbanization = factor(urbanization, levels = c("Low", "Medium", "High"))
   ) %>%
-  group_by(date, gender, rain_category, urban_class) %>%
+  group_by(date, gender, rain_category, urbanization) %>%
   summarise(n_accidents = n(), .groups = "drop")
 
-model_urban <- glm(
-  n_accidents ~ rain_category + gender + rain_category:gender + urban_class,
-  data = accident_counts_urban,
-  family = poisson
+model_urban_nb <- glm.nb(
+  n_accidents ~ rain_category + gender + rain_category:gender + urbanization,
+  data = accident_counts_urban
 )
 
-summary(model_urban)
+summary(model_urban_nb)
 
-# Coefficient plot for Model 2
-
-model_urban_results <- as.data.frame(summary(model_urban)$coefficients) %>%
+# Coefficient plot for Model 2 (Negative Binomial), expressed as Incidence Rate Ratios
+model_urban_results <- as.data.frame(summary(model_urban_nb)$coefficients) %>%
   mutate(Variable = rownames(.)) %>%
   rename(
     Std_Error = `Std. Error`,
@@ -246,21 +207,121 @@ model_urban_results <- as.data.frame(summary(model_urban)$coefficients) %>%
   ) %>%
   filter(Variable != "(Intercept)") %>%
   mutate(
-    Lower_CI = Estimate - 1.96 * Std_Error,
-    Upper_CI = Estimate + 1.96 * Std_Error
+    Lower_CI_log = Estimate - 1.96 * Std_Error,
+    Upper_CI_log = Estimate + 1.96 * Std_Error,
+    IRR       = exp(Estimate),       # exponentiate AFTER computing log-scale CI
+    Lower_CI  = exp(Lower_CI_log),
+    Upper_CI  = exp(Upper_CI_log),
+    Significant = P_Value < 0.05,
+    Variable = recode(Variable,
+                      "rain_categoryLight" = "Rain: Light",
+                      "rain_categoryModerate" = "Rain: Moderate",
+                      "rain_categoryHeavy" = "Rain: Heavy",
+                      "genderM" = "Gender: Male",
+                      "urbanizationMedium" = "Urbanization: Medium",
+                      "urbanizationHigh" = "Urbanization: High",
+                      "rain_categoryLight:genderM" = "Rain(Light) × Male",
+                      "rain_categoryModerate:genderM" = "Rain(Moderate) × Male",
+                      "rain_categoryHeavy:genderM" = "Rain(Heavy) × Male"
+    )
   )
 
-p_coef_urban <- ggplot(model_urban_results, aes(x = reorder(Variable, Estimate), y = Estimate)) +
-  geom_hline(yintercept = 0, linetype = "dashed", color = "red", linewidth = 0.8) +
-  geom_errorbar(aes(ymin = Lower_CI, ymax = Upper_CI), width = 0.2, color = "skyblue4", linewidth = 0.8) +
-  geom_point(color = "firebrick", size = 3) +
+p_coef_urban_nb <- ggplot(model_urban_results, aes(x = reorder(Variable, IRR), y = IRR, color = Significant)) +
+  geom_hline(yintercept = 1, linetype = "dashed", color = "red", linewidth = 0.8) +
+  geom_errorbar(aes(ymin = Lower_CI, ymax = Upper_CI), width = 0.2, linewidth = 0.8) +
+  geom_point(size = 3) +
+  scale_color_manual(values = c("TRUE" = "firebrick", "FALSE" = "grey60"), guide = "none") +
+  scale_y_log10() +   # log scale axis keeps multiplicative effects visually symmetric
   coord_flip() +
   theme_minimal() +
   labs(
-    title = "Coefficient Plot of Poisson Regression Model with Urbanization",
-    subtitle = "Points represent estimates; lines represent 95% confidence intervals",
+    title = "Incidence Rate Ratios — Negative Binomial Model with Urbanization",
+    subtitle = "Points represent IRRs; lines represent 95% confidence intervals (log scale axis)\nGrey points are not statistically significant (p > 0.05); dashed line = no effect (IRR = 1)",
     x = "Variables / Interaction Terms",
-    y = "Poisson Regression Coefficient"
+    y = "Incidence Rate Ratio (exp(coefficient))"
   )
 
-ggsave("coefficient_plot_urbanization_model.png", plot = p_coef_urban, width = 8, height = 5, dpi = 300)
+ggsave("coefficient_plot_urbanization_model_nb_IRR.png", plot = p_coef_urban_nb, width = 8, height = 5, dpi = 300)
+
+
+
+# 5. Fatality Model: Logistic Regression with Urbanization
+# Outcome: is_fatal (binary) ~ Rain + Gender + Urbanization
+
+df_fatal <- df %>%
+  filter(party_seq == 1,
+         longitude > 119 & longitude < 123 & latitude > 21 & latitude < 26) %>%
+  mutate(is_fatal = if_else(deaths > 0, 1, 0)) %>%
+  st_as_sf(coords = c("longitude", "latitude"), crs = 4326)
+
+df_fatal_urban <- st_join(df_fatal, twn_sf[, "TOWNNAME"], join = st_within) %>%
+  st_drop_geometry() %>%
+  mutate(
+    suffix = substr(TOWNNAME, nchar(TOWNNAME), nchar(TOWNNAME)),
+    urbanization = case_when(
+      suffix == "區" ~ "High",
+      suffix %in% c("市", "鎮") ~ "Medium",
+      suffix == "鄉" ~ "Low",
+      TRUE ~ NA_character_
+    )
+  ) %>%
+  filter(
+    !is.na(urbanization),
+    gender %in% c("M", "F"),
+    !is.na(rain_category)
+  ) %>%
+  mutate(
+    gender = factor(gender, levels = c("F", "M")),
+    rain_category = factor(rain_category, levels = c("None", "Light", "Moderate", "Heavy")),
+    urbanization = factor(urbanization, levels = c("Low", "Medium", "High"))
+  )
+
+model_fatal <- glm(
+  is_fatal ~ rain_category + gender + urbanization,
+  data = df_fatal_urban,
+  family = binomial
+)
+
+summary(model_fatal)
+
+# Coefficient plot for fatality model, expressed as Odds Ratios
+model_fatal_results <- as.data.frame(summary(model_fatal)$coefficients) %>%
+  mutate(Variable = rownames(.)) %>%
+  rename(
+    Std_Error = `Std. Error`,
+    P_Value = `Pr(>|z|)`
+  ) %>%
+  filter(Variable != "(Intercept)") %>%
+  mutate(
+    Lower_CI_log = Estimate - 1.96 * Std_Error,
+    Upper_CI_log = Estimate + 1.96 * Std_Error,
+    OR       = exp(Estimate),
+    Lower_CI = exp(Lower_CI_log),
+    Upper_CI = exp(Upper_CI_log),
+    Significant = P_Value < 0.05,
+    Variable = recode(Variable,
+                      "rain_categoryLight" = "Rain: Light",
+                      "rain_categoryModerate" = "Rain: Moderate",
+                      "rain_categoryHeavy" = "Rain: Heavy",
+                      "genderM" = "Gender: Male",
+                      "urbanizationMedium" = "Urbanization: Medium",
+                      "urbanizationHigh" = "Urbanization: High"
+    )
+  )
+
+p_fatal_or <- ggplot(model_fatal_results, aes(x = reorder(Variable, OR), y = OR, color = Significant)) +
+  geom_hline(yintercept = 1, linetype = "dashed", color = "red", linewidth = 0.8) +
+  geom_errorbar(aes(ymin = Lower_CI, ymax = Upper_CI), width = 0.2, linewidth = 0.8) +
+  geom_point(size = 3) +
+  scale_color_manual(values = c("TRUE" = "firebrick", "FALSE" = "grey60"), guide = "none") +
+  scale_y_log10() +
+  coord_flip() +
+  theme_minimal() +
+  labs(
+    title = "Odds Ratios — Fatality Logistic Regression Model",
+    subtitle = "Points represent ORs; lines represent 95% confidence intervals (log scale axis)\nGrey points are not statistically significant (p > 0.05); dashed line = no effect (OR = 1)",
+    x = "Variables",
+    y = "Odds Ratio (exp(coefficient))"
+  )
+
+ggsave("coefficient_plot_fatality_model_OR.png", plot = p_fatal_or, width = 8, height = 5, dpi = 300)
